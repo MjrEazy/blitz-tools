@@ -154,7 +154,7 @@ class BattleRecord():
 			self.calcRatios()
 		try:
 			for field in self.avg_fields:
-				self.results[field] = self.results[field] / self.battles
+				self.results[field] = self.results[field] / max(self.battles,1) # DF to handle bad data from WG API
 			self.results['battles'] = self.battles
 			self.results_ready = True
 			return True
@@ -230,7 +230,7 @@ class BattleRecordCategory():
 
 	def printResults(self):
 		try:
-			print('   '.join(self.getHeaders()))
+			print(' : '.join(self.getHeaders()))
 			for row in self.getResults():
 				print(' : '.join(row))
 		except KeyError as err:
@@ -374,39 +374,54 @@ async def processTankStats(playerstanks, N_workers: int) -> dict:
 	return player_stats
 
 def calcTeamStats(result_list: list, player_stats  : dict, account_id: int) -> list:
-	return_list = []
-	stat_types = player_stats[list(player_stats.keys())[0]].keys()
-	for result in result_list:
-		try:
-			n_allies = collections.defaultdict(defaultvalueZero)
-			allies_stats = collections.defaultdict(defaultvalueZero)
-			for ally in result['allies']:
-				# Player itself is not in 'allies': see readReplayJSON()
-				for stat in stat_types:
-					if player_stats[ally][stat] != None:
-						allies_stats[stat] += player_stats[ally][stat]
-						n_allies[stat] += 1
-			
-			for stat in stat_types:
-				result['allies_' + str(stat)] = allies_stats[stat] / n_allies[stat]
+    return_list = []
+    stat_types = player_stats[list(player_stats.keys())[0]].keys()
+    for result in result_list:
+        try:
+            n_allies = collections.defaultdict(defaultvalueZero)
+            allies_stats = collections.defaultdict(defaultvalueZero)
+            bu.verbose('Allies')
+            for ally in result['allies']:
+                # Player itself is not in 'allies': see readReplayJSON()
+                for stat in stat_types:
+                    if player_stats[ally][stat] != None:
+                        allies_stats[stat] += player_stats[ally][stat]
+                        n_allies[stat] += 1
+                        bu.verbose(str(ally) + ':' + str(stat) + ':' + str(player_stats[ally][stat]))
+            
+            for stat in stat_types:
+                if n_allies[stat] != None:
+                    if n_allies[stat] != 0:
+                        result['allies_' + str(stat)] = allies_stats[stat] / n_allies[stat]
+                    else:
+                        result['allies_' + str(stat)] = None
 
-			n_enemies = collections.defaultdict(defaultvalueZero)
-			enemies_stats = collections.defaultdict(defaultvalueZero)
-			for enemy in result['enemies']:
-				for stat in stat_types:
-					if player_stats[enemy][stat] != None:
-						enemies_stats[stat] += player_stats[enemy][stat]
-						n_enemies[stat] += 1
-			for stat in stat_types:
-				result['enemies_' + str(stat)] = enemies_stats[stat] / n_enemies[stat]
 
-			return_list.append(result)
-		except KeyError as err:
-			bu.error('Key :' + str(err) + ' not found')
-		except Exception as err:
-			bu.error(err)
-	
-	return return_list
+            n_enemies = collections.defaultdict(defaultvalueZero)
+            enemies_stats = collections.defaultdict(defaultvalueZero)
+            bu.verbose('Enemies')
+            for enemy in result['enemies']:
+                for stat in stat_types:
+                    if player_stats[enemy][stat] != None:
+                        enemies_stats[stat] += player_stats[enemy][stat]
+                        n_enemies[stat] += 1
+                        bu.verbose(str(enemy) + ':' + str(stat) + ':' + str(player_stats[enemy][stat]))
+                        
+            for stat in stat_types:
+                if n_enemies[stat] != None:
+                    if n_enemies[stat] != 0:
+                        result['enemies_' + str(stat)] = enemies_stats[stat] / n_enemies[stat]
+                    else:
+                        result['enemies_' + str(stat)] = None
+
+            bu.verbose('result:' + str(result))
+            return_list.append(result)
+        except KeyError as err:
+            bu.error('Key :' + str(err) + ' not found')
+        except Exception as err:
+            bu.error(err)
+    
+    return return_list
 
 async def statWorker(queue : asyncio.Queue, workerID: int) -> list:
 	"""Worker thread to find stats for player / tank pairs"""
